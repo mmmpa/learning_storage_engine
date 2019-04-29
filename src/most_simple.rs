@@ -1,6 +1,5 @@
 use std::fs;
 use std::fs::OpenOptions;
-use std::error::Error;
 use std::io::Write;
 use std::str::FromStr;
 
@@ -55,9 +54,9 @@ impl MostSimple {
 fn test_get_set() {
     let ms = MostSimple::new("./tmp/most_simple.txt");
 
-    ms.set(1, "data 1");
-    ms.set(2, "data 2-1");
-    ms.set(2, "data 2-2");
+    ms.set(1, "data 1").unwrap();
+    ms.set(2, "data 2-1").unwrap();
+    ms.set(2, "data 2-2").unwrap();
     assert_eq!(ms.get(1).unwrap(), "data 1".to_string());
     assert_eq!(ms.get(2).unwrap(), "data 2-2".to_string());
     assert_eq!(ms.get(3), None);
