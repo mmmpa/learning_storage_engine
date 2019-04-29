@@ -14,7 +14,7 @@ log-structured の log は追加のみ行われる連続したレコードを指
 
 # 素朴な log-structured storage
 
-:link: [most_simple.rs](./learning_storage_engine/src/most_simple.rs)
+:link: [most_simple.rs](./src/most_simple.rs)
 
 ## set
 
@@ -42,7 +42,17 @@ Index は書き込み時にメンテされる。そのため、Index の導入�
 
 # Hash indexed log-structured storage
 
+:link: [hash_index.rs](./src/hash_index.rs)
+
 Index として in-memory Hash Map を用いる。Hash は key としてレコードと同一の key を保持し、value としてレコードの開始位置を保持する。
+
+## set
+
+ファイルの末尾に追加していくが、Hash に key として id を、value として追加前の末尾位置を挿入する。
+
+## get
+
+Hash から id に対応する開始位置を入手し、そこから一行分のデータを読み込む。対応する開始位置が存在しない場合はレコードが不在なのでそこで処理が完了できる。
 
 ## Index の復元
 
