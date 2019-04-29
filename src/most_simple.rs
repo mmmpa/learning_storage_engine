@@ -36,14 +36,12 @@ impl MostSimple {
         };
 
         let mut matched = None;
+
         for line in whole.lines() {
             let s: Vec<&str> = line.split("::").collect();
-            let id_raw = s.get(0).unwrap();
-            let id_now = u32::from_str(id_raw).unwrap();
+            let id_now = u32::from_str(s.get(0).unwrap()).unwrap();
             let data = s.get(1).unwrap();
-            if id == id_now {
-                matched = Some(data.to_string());
-            }
+            if id == id_now { matched = Some(data.to_string()); }
         }
 
         matched
