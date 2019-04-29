@@ -1,6 +1,6 @@
 use std::fs;
 use std::fs::OpenOptions;
-use std::io::Write;
+use std::io::{Write, BufReader, BufRead};
 use std::str::FromStr;
 
 struct MostSimple {
@@ -23,21 +23,24 @@ impl MostSimple {
         };
         match write!(file, "{}::{}\n", id, data) {
             Err(_) => return Err("write error".to_string()),
-            Ok(f) => f,
+            _ => (),
         };
 
         Ok(())
     }
 
     fn get(&self, id: u32) -> Option<String> {
-        let whole = match fs::read_to_string(&self.path) {
-            Err(_) => return None,
-            Ok(f) => f,
-        };
+        let file = BufReader::new(
+            match fs::File::open(&self.path) {
+                Err(_) => return None,
+                Ok(f) => f,
+            }
+        );
 
         let mut matched = None;
 
-        for line in whole.lines() {
+        for line in file.lines() {
+            let line = line.unwrap();
             let s: Vec<&str> = line.split("::").collect();
             let id_now = u32::from_str(s.get(0).unwrap()).unwrap();
             let data = s.get(1).unwrap();
