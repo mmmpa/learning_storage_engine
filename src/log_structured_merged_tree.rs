@@ -54,83 +54,57 @@ impl LSM {
     }
 
     fn merge(&mut self) {
-        let c1 = fs::read_dir(self.dir()).unwrap().map(|e| e.unwrap().path()).collect::<Vec<PathBuf>>();
+        let mut c1 = fs::read_dir(self.dir()).unwrap()
+          .map(|e| e.unwrap().path())
+          .collect::<Vec<PathBuf>>();
+        c1.sort();
 
-        self.rev += 1;
+        let mut c1 = c1.iter()
+          .map(|path| BufReader::new(OpenOptions::new().read(true).open(path).unwrap()))
+          .flat_map(|buf| buf.lines())
+          .map(|line| Self::parse(&line.unwrap()));
 
-        if c1.len() == 0 {
-            return self.create_first_segment();
-        }
+        let mut c0 = self.c0.iter();
 
-        let mut c0_iter = self.c0.iter();
-        let mut c1_iter = c1.iter();
-        let mut kv_sd = c0_iter.next();
-        let mut written = false;
+        let mut c0_now = c0.next();
+        let mut c1_now = c1.next();
 
-        for old_path in c1_iter {
-            let mut m = String::new();
-            let mut last_id = 0;
+        let mut stack = String::new();
+        loop {
+            match (&c0_now, &c1_now) {
+                (Some(new), Some(old)) => {
+                    let new_id = new.0.clone();
+                    let old_id = old.0.clone();
 
-            // already completed tracing Hash
-            if let None = kv_sd {
-                let mut path = self.dir();
-                path.push(old_path.file_name().unwrap());
-                fs::copy(old_path, path);
-                continue;
-            }
-
-            let segment = BufReader::new(OpenOptions::new().read(true).open(old_path).unwrap());
-
-            let mut line_iter = segment.lines();
-            let mut line_s = line_iter.next();
-            while let Some(line) = line_s {
-                let mut old_kv = Self::parse(&line.unwrap());
-
-                while let Some(kv) = kv_sd {
-                    if kv.0 <= &old_kv.0 {
-                        Self::add_k_v(&mut m, kv);
-                        last_id = kv.0.clone();
-                        kv_sd = c0_iter.next();
-
-                        while kv.0 == &old_kv.0 {
-                            line_s = line_iter.next();
-                            if let Some(line) = &line_s {
-                                old_kv = Self::parse(&line.unwrap());
-                            }
-                        }
+                    if new_id < old_id {
+                        Self::add_k_v(&mut stack, (&new.0, &new.1));
+                        c0_now = c0.next();
+                    } else if new_id > old_id {
+                        Self::add_k_v(&mut stack, (&old.0, &old.1));
+                        c1_now = c1.next();
                     } else {
-                        break;
+                        c1_now = c1.next();
                     }
+                },
+                (None, Some(old)) => {
+                    Self::add_k_v(&mut stack, (&old.0, &old.1));
+                    c1_now = c1.next();
+                },
+                (Some(new), None) => {
+                    Self::add_k_v(&mut stack, (&new.0, &new.1));
+                    c0_now = c0.next();
+                },
+                (None, None) => {
+                    break;
                 }
-
-                Self::add_k_v(&mut m, (&old_kv.0, &old_kv.1));
-                last_id = old_kv.0.clone();
             }
-
-            let mut path = self.dir();
-            path.push(last_id.to_string());
-            fs::write(path, m);
         }
 
-        // rests in Hash
-        {
-            let mut m = String::new();
-            let mut last_id = 0;
-
-            if let Some(kv) = kv_sd {
-                Self::add_k_v(&mut m, kv);
-                last_id = kv.0.clone();
-            }
-
-            for kv in c0_iter {
-                Self::add_k_v(&mut m, kv);
-                last_id = kv.0.clone();
-            }
-
-            let mut path = self.dir();
-            path.push(last_id.to_string());
-            fs::write(path, m);
-        }
+        println!("stack {}", stack);
+        self.rev += 1;
+        let mut path = self.dir();
+        path.push("0".to_string());
+        fs::write(path, stack);
 
         self.c0.clear();
     }
@@ -199,7 +173,7 @@ fn test_compact() {
         lsm.set(n, &format!("data {}", n)).unwrap();
     }
 
-    for n in 1..20 {
-        lsm.set(n, &format!("data {}", n)).unwrap();
+    for n in 5..20 {
+        lsm.set(n, &format!("data 2 {}", n)).unwrap();
     }
 }
