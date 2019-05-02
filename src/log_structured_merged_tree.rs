@@ -229,6 +229,7 @@ fn test_compact() {
     assert_eq!(lsm.get(5).unwrap(), "data record 2 5");
     assert_eq!(lsm.get(160).unwrap(), "data record 3 160");
     assert_eq!(lsm.get(198).unwrap(), "data record 3 198");
+    assert_eq!(lsm.get(1000), None);
 }
 
 fn r(range: Range<u32>) -> Vec<u32> {
