@@ -5,3 +5,5 @@ authors = ["mmmpa <mmmpa.mmmpa@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+intrusive-collections = "0.7.8"
+rand = "0.6.5"

@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate intrusive_collections;
 use std::fmt::Debug;
 
 mod most_simple;

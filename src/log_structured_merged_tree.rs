@@ -1,9 +1,14 @@
-use std::collections::btree_map::BTreeMap;
+use std::collections::btree_map::{BTreeMap};
 use std::path::PathBuf;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader};
 use std::str::FromStr;
+use intrusive_collections::rbtree::RBTree;
+use intrusive_collections::{RBTreeLink, KeyAdapter};
+use rand::thread_rng;
+use rand::seq::SliceRandom;
+use std::ops::{RangeBounds, Range};
 
 struct LSM {
     c0: BTreeMap<u32, String>,
@@ -19,7 +24,7 @@ impl LSM {
             c0: BTreeMap::new(),
             c1: vec![],
             c0_threshold: 10,
-            c1_threshold: 20,
+            c1_threshold: 256,
             rev: 0,
         }
     }
@@ -53,23 +58,28 @@ impl LSM {
         path
     }
 
-    fn merge(&mut self) {
-        let mut c1 = fs::read_dir(self.dir()).unwrap()
-          .map(|e| e.unwrap().path())
-          .collect::<Vec<PathBuf>>();
-        c1.sort();
+    fn sorted_segment_path(&self) -> Vec<PathBuf> {
+        self.c1.iter().map(|id| self.create_path(id.clone())).collect::<Vec<PathBuf>>()
+    }
 
+    fn merge(&mut self) {
+        let mut c1 = self.sorted_segment_path();
+
+        self.rev += 1;
+        self.c1.clear();
+
+        let mut c0 = self.c0.iter();
         let mut c1 = c1.iter()
           .map(|path| BufReader::new(OpenOptions::new().read(true).open(path).unwrap()))
           .flat_map(|buf| buf.lines())
           .map(|line| Self::parse(&line.unwrap()));
 
-        let mut c0 = self.c0.iter();
-
         let mut c0_now = c0.next();
         let mut c1_now = c1.next();
 
         let mut stack = String::new();
+        let mut last_id = 0;
+
         loop {
             match (&c0_now, &c1_now) {
                 (Some(new), Some(old)) => {
@@ -78,35 +88,54 @@ impl LSM {
 
                     if new_id < old_id {
                         Self::add_k_v(&mut stack, (&new.0, &new.1));
+                        last_id = new_id;
                         c0_now = c0.next();
                     } else if new_id > old_id {
                         Self::add_k_v(&mut stack, (&old.0, &old.1));
+                        last_id = old_id;
                         c1_now = c1.next();
                     } else {
                         c1_now = c1.next();
                     }
                 },
-                (None, Some(old)) => {
-                    Self::add_k_v(&mut stack, (&old.0, &old.1));
-                    c1_now = c1.next();
-                },
                 (Some(new), None) => {
                     Self::add_k_v(&mut stack, (&new.0, &new.1));
+                    last_id = new.0.clone();
                     c0_now = c0.next();
+                },
+                (None, Some(old)) => {
+                    Self::add_k_v(&mut stack, (&old.0, &old.1));
+                    last_id = old.0;
+                    c1_now = c1.next();
                 },
                 (None, None) => {
                     break;
                 }
             }
+
+            if stack.len() > self.c1_threshold {
+                self.write_segment(last_id, &stack);
+                self.c1.push(last_id);
+                stack = String::new();
+            }
         }
 
-        println!("stack {}", stack);
-        self.rev += 1;
-        let mut path = self.dir();
-        path.push("0".to_string());
-        fs::write(path, stack);
+        if stack.len() != 0 {
+            self.write_segment(last_id, &stack);
+            self.c1.push(last_id);
+        }
 
         self.c0.clear();
+    }
+
+    fn write_segment(&self, last_id: u32, data: &str) {
+        fs::write(self.create_path(last_id), data);
+    }
+
+    fn create_path(&self, id: u32) -> PathBuf {
+        let mut path = self.dir();
+        path.push(id.to_string());
+        path
     }
 
     fn parse(line: &str) -> (u32, String) {
@@ -134,7 +163,23 @@ impl LSM {
     }
 
     fn search(&self, id: u32) -> Option<String> {
-        None
+        let nearest = self.c1.iter().find(|n| n >= &&id)?;
+
+        let file = BufReader::new(
+            fs::File::open(self.create_path(nearest.clone())).unwrap()
+        );
+
+        let mut matched = None;
+
+        for line in file.lines() {
+            let line = line.unwrap();
+            let s: Vec<&str> = line.split("::").collect();
+            let id_now = u32::from_str(s.get(0).unwrap()).unwrap();
+            let data = s.get(1).unwrap();
+            if id == id_now { matched = Some(data.to_string()); }
+        }
+
+        matched
     }
 }
 
@@ -169,11 +214,25 @@ fn test_compact() {
     LSM::clear();
     let mut lsm = LSM::new();
 
-    for n in 1..100 {
-        lsm.set(n, &format!("data {}", n)).unwrap();
+    for n in r(1..20) {
+        lsm.set(n, &format!("data record {}", n)).unwrap();
     }
 
-    for n in 5..20 {
-        lsm.set(n, &format!("data 2 {}", n)).unwrap();
+    for n in r(5..10) {
+        lsm.set(n, &format!("data record 2 {}", n)).unwrap();
     }
+
+    for n in r(0..100) {
+        lsm.set(n * 2, &format!("data record 3 {}", n * 2)).unwrap();
+    }
+
+    assert_eq!(lsm.get(5).unwrap(), "data record 2 5");
+    assert_eq!(lsm.get(160).unwrap(), "data record 3 160");
+    assert_eq!(lsm.get(198).unwrap(), "data record 3 198");
+}
+
+fn r(range: Range<u32>) -> Vec<u32> {
+    let mut vec: Vec<u32> = range.collect();
+    vec.shuffle(&mut thread_rng());
+    vec
 }
